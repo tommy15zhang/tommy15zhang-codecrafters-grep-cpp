@@ -1,13 +1,21 @@
 #include <iostream>
 #include <string>
+#include <algorithm>
+
+
+
+
 
 bool match_pattern(const std::string& input_line, const std::string& pattern) {
     if (pattern.length() == 1) {
         return input_line.find(pattern) != std::string::npos;
     }
-    else if (pattern == "\\d"){
+    else if (pattern == "\\d"){ // we use \\d to avoid confusion with things like \n
         //match digits
         return input_line.find_first_of("0123456789") != std::string::npos;
+    }
+    else if (pattern == "\\w") { // word character: [A-Za-z0-9_]
+        return input_line.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos;
     }
     else {
         throw std::runtime_error("Unhandled pattern " + pattern);
