@@ -17,6 +17,10 @@ bool match_pattern(const std::string& input_line, const std::string& pattern) {
     else if (pattern == "\\w") { // word character: [A-Za-z0-9_]
         return input_line.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos;
     }
+    else if (pattern.size() >= 2 && pattern.front() == '[' && pattern.back() == ']') {
+        std::string group = pattern.substr(1, pattern.size()-2); 
+        return input_line.find_first_of(group) != std::string::npos;
+    }
     else {
         throw std::runtime_error("Unhandled pattern " + pattern);
     }
