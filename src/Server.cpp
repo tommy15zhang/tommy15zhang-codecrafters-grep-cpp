@@ -23,7 +23,7 @@ bool match_pattern(const std::string& input_line, const std::string& pattern) {
     }
     // implement negative character groups. .substr(pos, len)
     else if (pattern.size() >= 3 && pattern.front() == '[' && pattern[1] == '^' && pattern.back() == ']'){
-        std::string group = pattern.substr(2, pattern.size()-2);
+        std::string group = pattern.substr(2, pattern.size()-3);
         return input_line.find_first_not_of(group) != std::string::npos;
     }
     else {
