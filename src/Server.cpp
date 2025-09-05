@@ -1,34 +1,124 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <vector>
 
+enum class TokenType {
+    Digit, // \d match 0-9
+    WordChar, // \w match [A-Za-z0-9_]
+    CharClass, // [abc] match a, b, or c
+    NegCharClass, // [^abc] match anything but a, b, or c
+    Literal // match any literal character 
+};
 
+struct Token
+{
+    TokenType type;
+    std::string data; //for CharClass, NegCharClass and Literal
+};
 
+ // only for the pattern
+std::vector<Token> tokenize(const std::string& pattern){
+    std::vector<Token> toks;
+    std::size_t i = 0, n = pattern.size();
+    while (i < n){
+        char c = pattern[i];
+
+        //Escape: \d , \w
+
+        if (c == '\\'){
+            char next = pattern[i+1];
+            if (next == 'd'){
+                toks.push_back({TokenType::Digit, ""});
+                i += 2;
+            } else if (next == 'w'){
+                toks.push_back({TokenType::WordChar, ""});
+                i += 2;
+            } else {
+                toks.push_back({TokenType::Literal, std::string(1, next)});
+                i += 2;
+            }
+        }
+        else if (c == '['){
+            std::size_t j = i + 1;
+            bool is_negative = false;
+            if (pattern[j] == '^') {is_negative = true; j++;}
+
+            std::string cls;
+            bool closed = false;
+            for (; j < n; ++j) {
+                if (pattern[j] == ']') {closed = true; break;}
+                if (pattern[j] == '\\'){
+                    cls.push_back(pattern[j+1]);
+                    j++;
+                } else {
+                    cls.push_back(pattern[j]);
+                }
+            }
+            toks.push_back({is_negative ? TokenType::NegCharClass : TokenType::CharClass, cls});
+            i = j + 1;
+        }
+        else {
+            toks.push_back({TokenType::Literal, std::string(1, c)});
+            i++;
+        }
+    }
+    return toks;
+}
+
+static inline bool is_word_char(unsigned char ch){
+    return std::isalnum(ch) || ch == '_';
+}
+
+static inline bool in_class(char ch, const std::string& set){
+    return set.find(ch) != std::string::npos;
+}
+
+bool match_here(const std::string& s, std::size_t start, const std::vector<Token>& toks){
+    std::size_t i = start;
+    std::size_t j = 0;
+
+    while (j < toks.size()){
+        if (i >= s.size()) return false;
+
+        const Token& tok = toks[j];
+        char ch = s[i];
+
+        switch (tok.type){
+            case TokenType::Digit:
+                if (!std::isdigit(static_cast<unsigned char>(ch))) return false;
+                break;
+            case TokenType::WordChar:
+                if (!is_word_char(static_cast<unsigned char>(ch))) return false;
+                break;
+            case TokenType::CharClass:
+                if (!in_class(ch, tok.data)) return false;
+                break;
+            case TokenType::NegCharClass:
+                if (in_class(ch, tok.data)) return false;
+                break;
+            case TokenType::Literal:
+                if (ch != tok.data[0]) return false;
+                break;
+        }
+        ++i;
+        ++j;
+    }
+    return true;
+}
 
 
 bool match_pattern(const std::string& input_line, const std::string& pattern) {
-    if (pattern.length() == 1) {
-        return input_line.find(pattern) != std::string::npos;
+    // Tokenize once
+    auto toks = tokenize(pattern);
+    if(toks.empty()) return true; //empty pattern matches trivalliy
+
+    for (std::size_t pos = 0; pos < input_line.size(); pos++){
+        if(match_here(input_line, pos, toks)){
+            return true;
+        }
     }
-    else if (pattern == "\\d"){ // we use \\d to avoid confusion with things like \n
-        //match digits
-        return input_line.find_first_of("0123456789") != std::string::npos;
-    }
-    else if (pattern == "\\w") { // word character: [A-Za-z0-9_]
-        return input_line.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos;
-    }
-    // implement negative character groups. .substr(pos, len) (has to be before positive character group)
-    else if (pattern.size() >= 3 && pattern.front() == '[' && pattern[1] == '^' && pattern.back() == ']'){
-        std::string group = pattern.substr(2, pattern.size()-3);
-        return input_line.find_first_not_of(group) != std::string::npos;
-    }
-    else if (pattern.size() >= 2 && pattern.front() == '[' && pattern.back() == ']') {
-        std::string group = pattern.substr(1, pattern.size()-2); 
-        return input_line.find_first_of(group) != std::string::npos;
-    }
-    else {
-        throw std::runtime_error("Unhandled pattern " + pattern);
-    }
+    return false;
 }
 
 int main(int argc, char* argv[]) {
@@ -59,8 +149,10 @@ int main(int argc, char* argv[]) {
     
     try {
         if (match_pattern(input_line, pattern)) {
+            printf("Pattern Matched\n");
             return 0;
         } else {
+            printf("Pattern Mismatched\n");
             return 1;
         }
     } catch (const std::runtime_error& e) {
