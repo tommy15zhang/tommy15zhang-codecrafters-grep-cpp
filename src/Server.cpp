@@ -3,6 +3,15 @@
 #include <algorithm>
 #include <vector>
 
+#define DEBUG 1   // uncomment to enable debug
+
+#ifdef DEBUG
+    #define DBG_PRINT(x) do { std::cerr << x << std::endl; } while(0)
+#else
+    #define DBG_PRINT(x) do {} while(0)
+#endif
+
+
 enum class TokenType {
     Digit, // \d match 0-9
     WordChar, // \w match [A-Za-z0-9_]
@@ -86,18 +95,23 @@ bool match_here(const std::string& s, std::size_t start, const std::vector<Token
 
         switch (tok.type){
             case TokenType::Digit:
+                DBG_PRINT("Checking Digit against char: " << ch);
                 if (!std::isdigit(static_cast<unsigned char>(ch))) return false;
                 break;
             case TokenType::WordChar:
+                DBG_PRINT("Checking WordChar against char: " << ch);
                 if (!is_word_char(static_cast<unsigned char>(ch))) return false;
                 break;
             case TokenType::CharClass:
+                DBG_PRINT("Checking CharClass against char: " << ch);
                 if (!in_class(ch, tok.data)) return false;
                 break;
             case TokenType::NegCharClass:
+                DBG_PRINT("Checking NegCharClass against char: " << ch);
                 if (in_class(ch, tok.data)) return false;
                 break;
             case TokenType::Literal:
+                DBG_PRINT("Checking Literal against char: " << ch);
                 if (ch != tok.data[0]) return false;
                 break;
         }
@@ -146,7 +160,8 @@ int main(int argc, char* argv[]) {
     
     std::string input_line;
     std::getline(std::cin, input_line);
-    
+    DBG_PRINT("Tokenizing pattern: " << pattern);
+
     try {
         if (match_pattern(input_line, pattern)) {
             printf("Pattern Matched\n");
