@@ -17,7 +17,8 @@ enum class TokenType {
     WordChar, // \w match [A-Za-z0-9_]
     CharClass, // [abc] match a, b, or c
     NegCharClass, // [^abc] match anything but a, b, or c
-    Literal // match any literal character 
+    Literal, // match any literal character 
+    StartAnchor // force the match at the start only
 };
 
 struct Token
@@ -67,7 +68,10 @@ std::vector<Token> tokenize(const std::string& pattern){
             toks.push_back({is_negative ? TokenType::NegCharClass : TokenType::CharClass, cls});
             i = j + 1;
         }
-        else {
+        else if (c == '^'){
+            toks.push_back({TokenType::StartAnchor, ""});
+            i += 1;
+        } else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
         }
@@ -92,6 +96,7 @@ bool match_here(const std::string& s, std::size_t start, const std::vector<Token
 
         const Token& tok = toks[j];
         char ch = s[i];
+        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
 
         switch (tok.type){
             case TokenType::Digit:
@@ -114,8 +119,14 @@ bool match_here(const std::string& s, std::size_t start, const std::vector<Token
                 DBG_PRINT("Checking Literal against char: " << ch);
                 if (ch != tok.data[0]) return false;
                 break;
+            case TokenType::StartAnchor:
+                DBG_PRINT("Checking Anchro against char: " << ch);
+                if (start != 0) return false;
+                break;
         }
-        ++i;
+        if (tok.type != TokenType::StartAnchor) { //Anchor dont consume
+            ++i; //pos of the char
+        }
         ++j;
     }
     return true;
