@@ -36,6 +36,8 @@
         "ctime": "cpp",
         "optional": "cpp",
         "queue": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "__split_buffer": "cpp",
+        "vector": "cpp"
     }
 }

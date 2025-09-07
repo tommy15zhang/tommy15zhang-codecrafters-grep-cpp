@@ -18,7 +18,8 @@ enum class TokenType {
     CharClass, // [abc] match a, b, or c
     NegCharClass, // [^abc] match anything but a, b, or c
     Literal, // match any literal character 
-    StartAnchor // force the match at the start only
+    StartAnchor, // force the match at the start only
+    EndAnchor
 };
 
 struct Token
@@ -33,6 +34,7 @@ std::vector<Token> tokenize(const std::string& pattern){
     std::size_t i = 0, n = pattern.size();
     while (i < n){
         char c = pattern[i];
+        DBG_PRINT("Tokenize pattern: " << c);
 
         //Escape: \d , \w
 
@@ -70,8 +72,15 @@ std::vector<Token> tokenize(const std::string& pattern){
         }
         else if (c == '^'){
             toks.push_back({TokenType::StartAnchor, ""});
+            DBG_PRINT("Token for Start Anchor created");
             i += 1;
-        } else {
+        } 
+        else if (c == '$'){
+            DBG_PRINT("Token for End Anchor created");
+            toks.push_back({TokenType::EndAnchor, ""});
+            i += 1;
+        }
+        else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
         }
@@ -90,13 +99,15 @@ static inline bool in_class(char ch, const std::string& set){
 bool match_here(const std::string& s, std::size_t start, const std::vector<Token>& toks){
     std::size_t i = start;
     std::size_t j = 0;
+    DBG_PRINT("s.size "<< s.size());
+
 
     while (j < toks.size()){
-        if (i >= s.size()) return false;
+        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
+        if (i > s.size()) return false;
 
         const Token& tok = toks[j];
         char ch = s[i];
-        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
 
         switch (tok.type){
             case TokenType::Digit:
@@ -120,11 +131,15 @@ bool match_here(const std::string& s, std::size_t start, const std::vector<Token
                 if (ch != tok.data[0]) return false;
                 break;
             case TokenType::StartAnchor:
-                DBG_PRINT("Checking Anchro against char: " << ch);
+                DBG_PRINT("Checking Start Anchor");
                 if (start != 0) return false;
                 break;
+            case TokenType::EndAnchor:
+                DBG_PRINT("Checking End Anchor");
+                if (i != s.size()) return false;
+                break;
         }
-        if (tok.type != TokenType::StartAnchor) { //Anchor dont consume
+        if (tok.type != TokenType::StartAnchor && tok.type != TokenType::EndAnchor) { //Anchor dont consume
             ++i; //pos of the char
         }
         ++j;
