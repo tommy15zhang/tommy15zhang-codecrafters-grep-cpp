@@ -173,8 +173,9 @@ static bool match_from(const std::string& s,
 
             size_t max_k = consume_max(s, i, tok);
             
+        // For loop to ensure corner cases: Pattern: a+ab Input: aaab, Work it out and you will see
             for (size_t k = max_k; k >= 1; k--){
-                if (!match_from(s, i+k, toks, j+2, start)) return true;
+                if (match_from(s, i+k, toks, j+2, start)) return true;
                 if (k == 1) break;
             }
             return false;
