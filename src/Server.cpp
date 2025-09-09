@@ -19,7 +19,9 @@ enum class TokenType {
     NegCharClass, // [^abc] match anything but a, b, or c
     Literal, // match any literal character 
     StartAnchor, // force the match at the start only
-    EndAnchor
+    EndAnchor, // for the match at the end 
+    PlusQuantifier // one or more
+
 };
 
 struct Token
@@ -80,6 +82,11 @@ std::vector<Token> tokenize(const std::string& pattern){
             toks.push_back({TokenType::EndAnchor, ""});
             i += 1;
         }
+        else if (c == '+'){
+            DBG_PRINT("one or more quantifier created");
+            toks.push_back({TokenType::PlusQuantifier, ""});
+            i += 1;
+        }
         else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
@@ -96,20 +103,9 @@ static inline bool in_class(char ch, const std::string& set){
     return set.find(ch) != std::string::npos;
 }
 
-bool match_here(const std::string& s, std::size_t start, const std::vector<Token>& toks){
-    std::size_t i = start;
-    std::size_t j = 0;
-    DBG_PRINT("s.size "<< s.size());
-
-
-    while (j < toks.size()){
-        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
-        if (i > s.size()) return false;
-
-        const Token& tok = toks[j];
-        char ch = s[i];
-
-        switch (tok.type){
+//atom mean the smallest unit
+bool match_atom(const Token& tok, char ch){
+    switch (tok.type){
             case TokenType::Digit:
                 DBG_PRINT("Checking Digit against char: " << ch);
                 if (!std::isdigit(static_cast<unsigned char>(ch))) return false;
@@ -129,19 +125,62 @@ bool match_here(const std::string& s, std::size_t start, const std::vector<Token
             case TokenType::Literal:
                 DBG_PRINT("Checking Literal against char: " << ch);
                 if (ch != tok.data[0]) return false;
-                break;
-            case TokenType::StartAnchor:
-                DBG_PRINT("Checking Start Anchor");
-                if (start != 0) return false;
-                break;
-            case TokenType::EndAnchor:
-                DBG_PRINT("Checking End Anchor");
-                if (i != s.size()) return false;
-                break;
+                break;       
+            case TokenType::PlusQuantifier: return false;
+            default: return false;        
         }
-        if (tok.type != TokenType::StartAnchor && tok.type != TokenType::EndAnchor) { //Anchor dont consume
-            ++i; //pos of the char
+    return true;
+}
+
+// gready approach: consume max
+// static function means internal linkage, only available within this cpp file
+static size_t consume_max(const std::string& s, size_t i, const Token& atom){
+    size_t k = 0, p = i;
+    while (p < s.size() && match_atom(atom, s[p])){p++, k++;}
+    return k;
+}
+
+// worker: i = input index, j = token index, start = original start (for ^)
+static bool match_from(const std::string& s,
+                       size_t i,
+                       const std::vector<Token>& toks,
+                       size_t j,
+                       size_t start){    
+    // std::size_t i = start;
+    // std::size_t j = 0;
+    // DBG_PRINT("s.size "<< s.size());
+
+
+    while (j < toks.size()){
+        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
+        const Token& tok = toks[j];
+
+        if (tok.type == TokenType::StartAnchor) {
+            if (start != 0) return false;
+            ++j;
+            continue; // doesn’t consume a character
         }
+
+        if (tok.type == TokenType::EndAnchor) {
+            if (i != s.size()) return false;
+            ++j;
+            continue; // doesn’t consume a character
+        }
+
+        // PlusQuantifier takes effect on its preceding thing
+        if (j + 1 < toks.size() && toks[j+1].type == TokenType::PlusQuantifier){
+            if (!match_atom(tok, s[i])) return false;
+
+            size_t max_k = consume_max(s, i, tok);
+            
+            for (size_t k = max_k; k >= 1; k--){
+                if (!match_from(s, i+k, toks, j+2, start)) return true;
+                if (k == 1) break;
+            }
+            return false;
+        }
+        if ( i >= s.size() || !match_atom(tok, s[i])) return false;
+        ++i;
         ++j;
     }
     return true;
@@ -154,7 +193,7 @@ bool match_pattern(const std::string& input_line, const std::string& pattern) {
     if(toks.empty()) return true; //empty pattern matches trivalliy
 
     for (std::size_t pos = 0; pos < input_line.size(); pos++){
-        if(match_here(input_line, pos, toks)){
+        if(match_from(input_line, pos, toks, 0, pos)){
             return true;
         }
     }
