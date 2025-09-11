@@ -20,8 +20,8 @@ enum class TokenType {
     Literal, // match any literal character 
     StartAnchor, // force the match at the start only
     EndAnchor, // for the match at the end 
-    PlusQuantifier // one or more
-
+    PlusQuantifier, // one or more
+    QuestionQuantifier // zero or one
 };
 
 struct Token
@@ -87,6 +87,11 @@ std::vector<Token> tokenize(const std::string& pattern){
             toks.push_back({TokenType::PlusQuantifier, ""});
             i += 1;
         }
+        else if (c == '?'){
+            DBG_PRINT("zero or one quantifier created");
+            toks.push_back({TokenType::QuestionQuantifier, ""});
+            i += 1;
+        }
         else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
@@ -126,7 +131,6 @@ bool match_atom(const Token& tok, char ch){
                 DBG_PRINT("Checking Literal against char: " << ch);
                 if (ch != tok.data[0]) return false;
                 break;       
-            case TokenType::PlusQuantifier: return false;
             default: return false;        
         }
     return true;
@@ -180,6 +184,18 @@ static bool match_from(const std::string& s,
             }
             return false;
         }
+        // QuestionQuantifier , also try to be greedy
+        if (j + 1 < toks.size() && toks[j+1].type == TokenType::QuestionQuantifier){
+            // try taking 1 if possible
+            if (i < s.size() && match_atom(tok, s[i])){
+                if (match_from(s, i + 1, toks, j+2, start)) return true;
+            }
+            // try taking 0 (backtrack)
+            if (match_from(s, i, toks, j+2, start)) return true;
+            return false;
+        }
+
+        // Question
         if ( i >= s.size() || !match_atom(tok, s[i])) return false;
         ++i;
         ++j;
