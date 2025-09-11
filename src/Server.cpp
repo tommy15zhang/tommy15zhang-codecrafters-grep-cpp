@@ -21,7 +21,8 @@ enum class TokenType {
     StartAnchor, // force the match at the start only
     EndAnchor, // for the match at the end 
     PlusQuantifier, // one or more
-    QuestionQuantifier // zero or one
+    QuestionQuantifier, // zero or one
+    AnyChar
 };
 
 struct Token
@@ -92,6 +93,11 @@ std::vector<Token> tokenize(const std::string& pattern){
             toks.push_back({TokenType::QuestionQuantifier, ""});
             i += 1;
         }
+        else if (c == '.'){
+            DBG_PRINT("matches any character token created");
+            toks.push_back({TokenType::AnyChar, ""});
+            i += 1;
+        }
         else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
@@ -130,7 +136,10 @@ bool match_atom(const Token& tok, char ch){
             case TokenType::Literal:
                 DBG_PRINT("Checking Literal against char: " << ch);
                 if (ch != tok.data[0]) return false;
-                break;       
+                break;
+            case TokenType::AnyChar:
+                DBG_PRINT("Checking any char against char: " << ch);
+                break;
             default: return false;        
         }
     return true;
@@ -190,7 +199,7 @@ static bool match_from(const std::string& s,
             if (i < s.size() && match_atom(tok, s[i])){
                 if (match_from(s, i + 1, toks, j+2, start)) return true;
             }
-            // try taking 0 (backtrack)
+            // try taking 0 (backtrack) the position of i matters.
             if (match_from(s, i, toks, j+2, start)) return true;
             return false;
         }
