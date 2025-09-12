@@ -22,7 +22,10 @@ enum class TokenType {
     EndAnchor, // for the match at the end 
     PlusQuantifier, // one or more
     QuestionQuantifier, // zero or one
-    AnyChar
+    AnyChar,
+    LeftParen, // (
+    RigthParen, // )
+    Alternation // |
 };
 
 struct Token
@@ -98,6 +101,18 @@ std::vector<Token> tokenize(const std::string& pattern){
             toks.push_back({TokenType::AnyChar, ""});
             i += 1;
         }
+        else if (c == '('){
+            toks.push_back({TokenType::LeftParen, ""});
+            i += 1;
+        }
+        else if (c == ')'){
+            toks.push_back({TokenType::RigthParen, ""});
+            i += 1;
+        }
+        else if (c == '|'){
+            toks.push_back({TokenType::Alternation, ""});
+            i += 1;
+        }
         else {
             toks.push_back({TokenType::Literal, std::string(1, c)});
             i++;
@@ -153,6 +168,82 @@ static size_t consume_max(const std::string& s, size_t i, const Token& atom){
     return k;
 }
 
+static std::vector<std::pair<size_t, size_t>>
+split_alts(const std::vector<Token>& toks, size_t L, size_t R){
+    std::vector<std::pair<size_t, size_t>> parts;
+    size_t depth = 0, start = L;
+    for (size_t k = L; k < R; ++k){
+        if (toks[k].type == TokenType::LeftParen) depth++;
+        else if (toks[k].type == TokenType::RigthParen) depth--;
+        else if (toks[k].type == TokenType::Alternation && depth==0){
+            parts.push_back({start, k});
+            start = k + 1;
+        } 
+    }
+    parts.push_back({start, R});
+    return parts;
+}
+static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
+    size_t depth = 0;
+    for (size_t k = open_j; k < toks.size(); ++k){
+        if (toks[k].type == TokenType::LeftParen) depth++;
+        else if (toks[k].type == TokenType::RigthParen){
+            if (--depth == 0) return k; //not sure why return k here. remember to ask
+        }
+    }
+    throw std::runtime_error("Unmatched '('");
+}
+
+struct SliceResult {bool ok; size_t next_i; };
+
+static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start){
+    while (j < end_j){
+        const Token& tok = toks[j];
+        // anchors work the same
+        if (tok.type == TokenType::StartAnchor){ if (start != 0) return {false,i}; ++j; continue; }
+        if (tok.type == TokenType::EndAnchor){ if (i != s.size()) return {false,i}; ++j; continue; }
+
+        // quantifiers on atoms inside a slice (your existing + / ? branches)
+        if (j + 1 < end_j && toks[j+1].type == TokenType::PlusQuantifier){
+            if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
+            size_t max_k = consume_max(s, i, tok);
+            for (size_t k = max_k; k >= 1; --k){
+                auto sub = match_slice(s, i + k, toks, j + 2, end_j, start);
+                if (sub.ok) return sub;
+                if (k == 1) break;
+            }
+            return {false,i};
+        }
+        if (j + 1 < end_j && toks[j+1].type == TokenType::QuestionQuantifier){
+            if (i < s.size() && match_atom(tok, s[i])){
+                auto sub1 = match_slice(s, i + 1, toks, j + 2, end_j, start);
+                if (sub1.ok) return sub1;
+            }
+            auto sub0 = match_slice(s, i, toks, j + 2, end_j, start);
+            if (sub0.ok) return sub0;
+            return {false,i};
+        }
+
+        if (tok.type == TokenType::LeftParen){
+            size_t r = find_rparen(toks, j);
+            auto alts = split_alts(toks, j+1, r);
+            bool matched = false; size_t new_i = i;
+            for (auto [a,b] : alts){
+                auto sub = match_slice(s, i, toks, a, b, start);
+                if (sub.ok){ matched = true; new_i = sub.next_i; break; }
+            }
+            if (!matched) return {false,i};
+            i = new_i; j = r + 1; // continue after ')'
+            continue;
+        }
+        // regular atom
+        if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
+        ++i; ++j;
+    }
+    return {true, i};
+}
+
+
 // worker: i = input index, j = token index, start = original start (for ^)
 static bool match_from(const std::string& s,
                        size_t i,
@@ -202,6 +293,25 @@ static bool match_from(const std::string& s,
             // try taking 0 (backtrack) the position of i matters.
             if (match_from(s, i, toks, j+2, start)) return true;
             return false;
+        }
+
+        if (tok.type == TokenType::LeftParen) {
+            size_t r = find_rparen(toks, j);
+            auto alts = split_alts(toks, j + 1, r);
+
+            bool ok = false;
+            size_t after_i = i;
+
+            for (auto [a, b] : alts) {
+                auto sub = match_slice(s, i, toks, a, b, start);
+                if (sub.ok) { ok = true; after_i = sub.next_i; break; }
+            }
+            if (!ok) return false;
+
+            // Advance past the group and keep matching the rest (like the trailing 's')
+            i = after_i;
+            j = r + 1;
+            continue;               // refresh tok at new j
         }
 
         // Question

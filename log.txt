@@ -1,0 +1,8 @@
+-- Running vcpkg install
+All requested packages are currently installed.
+All requested installations completed successfully in: 36.9 us
+-- Running vcpkg install - done
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/jiahaozhang/Desktop/codecrafters-grep-cpp/build
+[100%] Built target exe
