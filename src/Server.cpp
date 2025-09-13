@@ -197,12 +197,24 @@ static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
 struct SliceResult {bool ok; size_t next_i; };
 
 static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start){
+    // Try to match the sub-pattern represented by tokens toks[j ... end_j] against the input string s starting at character index i
+    // Return a struct {contain 2 values}. Ok: did this slice of pattern match successfully. next_i: if matched, where in th einput the match ended
     size_t depth = 0;
     bool has_bar = false;
     for (size_t k = j; k < end_j; ++k) {
-        if (toks[k].type == TokenType::LeftParen)      ++depth;
-        else if (toks[k].type == TokenType::RigthParen) --depth;
+        if (toks[k].type == TokenType::LeftParen){
+            ++depth;
+            DBG_PRINT("Found (");
+            DBG_PRINT("Depth: " << depth);
+        }
+        else if (toks[k].type == TokenType::RigthParen){
+            --depth;
+            DBG_PRINT("Found )");
+            DBG_PRINT("Depth: " << depth);
+        }
         else if (toks[k].type == TokenType::Alternation && depth == 0) {
+            DBG_PRINT("Found |");
+            DBG_PRINT("Depth " << depth);
             has_bar = true; break;
         }
     }
@@ -243,15 +255,57 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
 
         if (tok.type == TokenType::LeftParen){
             size_t r = find_rparen(toks, j);
-            auto alts = split_alts(toks, j+1, r);
-            bool matched = false; size_t new_i = i;
-            for (auto [a,b] : alts){
-                auto sub = match_slice(s, i, toks, a, b, start);
-                if (sub.ok){ matched = true; new_i = sub.next_i; break; }
+
+            // Match the group interior [j+1, r) exactly once from input index `pos`.
+            auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool {
+                auto sub = match_slice(s, pos, toks, j + 1, r, start);
+                if (!sub.ok) return false;
+                out_next_i = sub.next_i;  // where the group finished in the input
+                return true;
+            };
+
+            // IMPORTANT: look for quantifier relative to this slice's end (end_j), not toks.size().
+            bool has_plus = (r + 1 < end_j && toks[r + 1].type == TokenType::PlusQuantifier);
+            bool has_q    = (r + 1 < end_j && toks[r + 1].type == TokenType::QuestionQuantifier);
+
+            if (has_plus) {
+                // Greedy repeat the whole group and record every end position.
+                std::vector<size_t> ends;
+                size_t cur = i, next = i;
+                while (run_group_once(cur, next)) {
+                    if (next == cur) break;        // safety against empty group
+                    ends.push_back(next);
+                    cur = next;
+                }
+                if (ends.empty()) return {false, i}; // '+' requires at least one
+
+                // Backtrack: try k repetitions from max down to 1.
+                for (size_t k = ends.size(); k >= 1; --k) {
+                    size_t after = ends[k - 1];
+                    auto cont = match_slice(s, after, toks, r + 2, end_j, start); // skip ')' and '+'
+                    if (cont.ok) return cont;
+                    if (k == 1) break; // prevent size_t underflow
+                }
+                return {false, i};
             }
-            if (!matched) return {false,i};
-            i = new_i; j = r + 1; // continue after ')'
-            continue;
+            else if (has_q) {
+                // Try once (greedy)…
+                size_t after_once;
+                if (run_group_once(i, after_once)) {
+                    auto cont1 = match_slice(s, after_once, toks, r + 2, end_j, start);
+                    if (cont1.ok) return cont1;
+                }
+                // …or skip it.
+                return match_slice(s, i, toks, r + 2, end_j, start);
+            }
+            else {
+                // No quantifier: match exactly once and continue within this slice.
+                size_t after_once;
+                if (!run_group_once(i, after_once)) return {false, i};
+                i = after_once;
+                j = r + 1;  // move past ')'
+                continue;   // keep matching the rest of the slice
+            }
         }
         // regular atom
         if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
@@ -262,115 +316,122 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
 
 
 // worker: i = input index, j = token index, start = original start (for ^)
+// static bool match_from(const std::string& s,
+//                        size_t i,
+//                        const std::vector<Token>& toks,
+//                        size_t j,
+//                        size_t start){    
+//     // std::size_t i = start;
+//     // std::size_t j = 0;
+//     // DBG_PRINT("s.size "<< s.size());
+
+
+//     while (j < toks.size()){
+//         DBG_PRINT("----------");
+//         DBG_PRINT("char index i: " << i);
+//         DBG_PRINT("token index j: " << j);
+//         // DBG_PRINT("----------");
+//         // DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
+//         const Token& tok = toks[j];
+
+//         if (tok.type == TokenType::StartAnchor) {
+//             if (start != 0) return false;
+//             ++j;
+//             continue; // doesn’t consume a character
+//         }
+
+//         if (tok.type == TokenType::EndAnchor) {
+//             if (i != s.size()) return false;
+//             ++j;
+//             continue; // doesn’t consume a character
+//         }
+
+//         // PlusQuantifier takes effect on its preceding thing
+//         if (j + 1 < toks.size() && toks[j+1].type == TokenType::PlusQuantifier){
+//             if (i >= s.size() || !match_atom(tok, s[i])) return false; // add the bounds guard / /
+
+//             size_t max_k = consume_max(s, i, tok);
+            
+//         // For loop to ensure corner cases: Pattern: a+ab Input: aaab, Work it out and you will see
+//             for (size_t k = max_k; k >= 1; k--){
+//                 if (match_from(s, i+k, toks, j+2, start)) return true;
+//                 if (k == 1) break;
+//             }
+//             return false;
+//         }
+//         // QuestionQuantifier , also try to be greedy
+//         if (j + 1 < toks.size() && toks[j+1].type == TokenType::QuestionQuantifier){
+//             // try taking 1 if possible
+//             if (i < s.size() && match_atom(tok, s[i])){
+//                 if (match_from(s, i + 1, toks, j+2, start)) return true;
+//             }
+//             // try taking 0 (backtrack) the position of i matters.
+//             if (match_from(s, i, toks, j+2, start)) return true;
+//             return false;
+//         }
+
+//         if (tok.type == TokenType::LeftParen) {
+//             size_t r = find_rparen(toks, j);
+
+//             auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool{
+//                 auto sub = match_slice(s, pos, toks, j + 1, r, start);
+//                 if (!sub.ok) return false;
+//                 out_next_i = sub.next_i; 
+//                 return true;
+//             };
+
+//             bool has_plus = (r + 1 < toks.size() && toks[r + 1].type == TokenType::PlusQuantifier);
+//             bool has_q = (r + 1 < toks.size() && toks[r + 1].type == TokenType::QuestionQuantifier);
+            
+//             if (has_plus){
+//                 std::vector<size_t> ends;
+//                 size_t cur = i, next = i;
+
+//                 while (run_group_once(cur, next)){
+//                     if (next == cur) break;
+//                     ends.push_back(next);
+//                     cur = next;
+//                 }
+//                 if (ends.empty()) return false;
+
+//                 for (size_t k = ends.size(); k >= 1; --k){
+//                     size_t after = ends[k - 1];
+//                     if (match_from(s, after, toks, r + 2, start)) return true;
+//                     if (k == 1) break;
+//                 }
+//                 return false;
+//             } else if (has_q){
+//                 size_t after_once;
+//                 if (run_group_once(i, after_once)){
+//                     if (match_from(s, after_once, toks, r + 2, start)) return true;
+//                 }
+//                 return match_from(s, i, toks, r+2, start);
+//             }
+//             else {
+//                 size_t after_once;
+//                 if (!run_group_once(i, after_once)) return false;
+//                 i = after_once;
+//                 j = r + 1;
+//                 continue;
+//             }
+//         }
+
+//         // Question
+//         if ( i >= s.size() || !match_atom(tok, s[i])) return false;
+//         ++i;
+//         ++j;
+//     }
+//     return true;
+// }
+
 static bool match_from(const std::string& s,
                        size_t i,
                        const std::vector<Token>& toks,
                        size_t j,
-                       size_t start){    
-    // std::size_t i = start;
-    // std::size_t j = 0;
-    // DBG_PRINT("s.size "<< s.size());
-
-
-    while (j < toks.size()){
-        DBG_PRINT("----------");
-        DBG_PRINT("char index i: " << i);
-        DBG_PRINT("token index j: " << j);
-        // DBG_PRINT("----------");
-        // DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
-        const Token& tok = toks[j];
-
-        if (tok.type == TokenType::StartAnchor) {
-            if (start != 0) return false;
-            ++j;
-            continue; // doesn’t consume a character
-        }
-
-        if (tok.type == TokenType::EndAnchor) {
-            if (i != s.size()) return false;
-            ++j;
-            continue; // doesn’t consume a character
-        }
-
-        // PlusQuantifier takes effect on its preceding thing
-        if (j + 1 < toks.size() && toks[j+1].type == TokenType::PlusQuantifier){
-            if (i >= s.size() || !match_atom(tok, s[i])) return false; // add the bounds guard / /
-
-            size_t max_k = consume_max(s, i, tok);
-            
-        // For loop to ensure corner cases: Pattern: a+ab Input: aaab, Work it out and you will see
-            for (size_t k = max_k; k >= 1; k--){
-                if (match_from(s, i+k, toks, j+2, start)) return true;
-                if (k == 1) break;
-            }
-            return false;
-        }
-        // QuestionQuantifier , also try to be greedy
-        if (j + 1 < toks.size() && toks[j+1].type == TokenType::QuestionQuantifier){
-            // try taking 1 if possible
-            if (i < s.size() && match_atom(tok, s[i])){
-                if (match_from(s, i + 1, toks, j+2, start)) return true;
-            }
-            // try taking 0 (backtrack) the position of i matters.
-            if (match_from(s, i, toks, j+2, start)) return true;
-            return false;
-        }
-
-        if (tok.type == TokenType::LeftParen) {
-            size_t r = find_rparen(toks, j);
-
-            auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool{
-                auto sub = match_slice(s, pos, toks, j + 1, r, start);
-                if (!sub.ok) return false;
-                out_next_i = sub.next_i; 
-                return true;
-            };
-
-            bool has_plus = (r + 1 < toks.size() && toks[r + 1].type == TokenType::PlusQuantifier);
-            bool has_q = (r + 1 < toks.size() && toks[r + 1].type == TokenType::QuestionQuantifier);
-            
-            if (has_plus){
-                std::vector<size_t> ends;
-                size_t cur = i, next = i;
-
-                while (run_group_once(cur, next)){
-                    if (next == cur) break;
-                    ends.push_back(next);
-                    cur = next;
-                }
-                if (ends.empty()) return false;
-
-                for (size_t k = ends.size(); k >= 1; --k){
-                    size_t after = ends[k - 1];
-                    if (match_from(s, after, toks, r + 2, start)) return true;
-                    if (k == 1) break;
-                }
-                return false;
-            } else if (has_q){
-                size_t after_once;
-                if (run_group_once(i, after_once)){
-                    if (match_from(s, after_once, toks, r + 2, start)) return true;
-                }
-                return match_from(s, i, toks, r+2, start);
-            }
-            else {
-                size_t after_once;
-                if (!run_group_once(i, after_once)) return false;
-                i = after_once;
-                j = r + 1;
-                continue;
-            }
-        }
-
-        // Question
-        if ( i >= s.size() || !match_atom(tok, s[i])) return false;
-        ++i;
-        ++j;
-    }
-    return true;
+                       size_t start){
+    auto sub = match_slice(s, i, toks, 0, toks.size(), start);
+    return sub.ok;
 }
-
-
 bool match_pattern(const std::string& input_line, const std::string& pattern) {
     // Tokenize once
     auto toks = tokenize(pattern);
