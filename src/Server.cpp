@@ -197,6 +197,23 @@ static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
 struct SliceResult {bool ok; size_t next_i; };
 
 static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start){
+    size_t depth = 0;
+    bool has_bar = false;
+    for (size_t k = j; k < end_j; ++k) {
+        if (toks[k].type == TokenType::LeftParen)      ++depth;
+        else if (toks[k].type == TokenType::RigthParen) --depth;
+        else if (toks[k].type == TokenType::Alternation && depth == 0) {
+            has_bar = true; break;
+        }
+    }
+    if (has_bar) {
+        auto parts = split_alts(toks, j, end_j); // split on top-level '|'
+        for (auto [a, b] : parts) {
+            auto sub = match_slice(s, i, toks, a, b, start);
+            if (sub.ok) return sub;   // succeed on the first branch that works
+        }
+        return {false, i};            // all branches failed
+    }
     while (j < end_j){
         const Token& tok = toks[j];
         // anchors work the same
@@ -256,7 +273,9 @@ static bool match_from(const std::string& s,
 
 
     while (j < toks.size()){
-        DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
+        DBG_PRINT("char index i: " << i);
+        DBG_PRINT("token index j: " << j);
+        // DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
         const Token& tok = toks[j];
 
         if (tok.type == TokenType::StartAnchor) {
