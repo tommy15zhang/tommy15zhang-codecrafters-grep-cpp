@@ -276,7 +276,7 @@ static bool match_from(const std::string& s,
         DBG_PRINT("----------");
         DBG_PRINT("char index i: " << i);
         DBG_PRINT("token index j: " << j);
-        DBG_PRINT("----------");
+        // DBG_PRINT("----------");
         // DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
         const Token& tok = toks[j];
 
