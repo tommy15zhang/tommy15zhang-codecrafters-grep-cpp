@@ -2,6 +2,7 @@
 #include <string>
 #include <algorithm>
 #include <vector>
+#include <fstream>
 
 #define DEBUG 1   // uncomment to enable debug
 
@@ -188,7 +189,7 @@ static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
     for (size_t k = open_j; k < toks.size(); ++k){
         if (toks[k].type == TokenType::LeftParen) depth++;
         else if (toks[k].type == TokenType::RigthParen){
-            if (--depth == 0) return k; //not sure why return k here. remember to ask
+            if (--depth == 0) return k; 
         }
     }
     throw std::runtime_error("Unmatched '('");
@@ -261,6 +262,7 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 auto sub = match_slice(s, pos, toks, j + 1, r, start);
                 if (!sub.ok) return false;
                 out_next_i = sub.next_i;  // where the group finished in the input
+                // next_i tell exactly where to continue after the group
                 return true;
             };
 
@@ -314,116 +316,6 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
     return {true, i};
 }
 
-
-// worker: i = input index, j = token index, start = original start (for ^)
-// static bool match_from(const std::string& s,
-//                        size_t i,
-//                        const std::vector<Token>& toks,
-//                        size_t j,
-//                        size_t start){    
-//     // std::size_t i = start;
-//     // std::size_t j = 0;
-//     // DBG_PRINT("s.size "<< s.size());
-
-
-//     while (j < toks.size()){
-//         DBG_PRINT("----------");
-//         DBG_PRINT("char index i: " << i);
-//         DBG_PRINT("token index j: " << j);
-//         // DBG_PRINT("----------");
-//         // DBG_PRINT("i = " << i << " j = " << j << " -> - v ");
-//         const Token& tok = toks[j];
-
-//         if (tok.type == TokenType::StartAnchor) {
-//             if (start != 0) return false;
-//             ++j;
-//             continue; // doesn’t consume a character
-//         }
-
-//         if (tok.type == TokenType::EndAnchor) {
-//             if (i != s.size()) return false;
-//             ++j;
-//             continue; // doesn’t consume a character
-//         }
-
-//         // PlusQuantifier takes effect on its preceding thing
-//         if (j + 1 < toks.size() && toks[j+1].type == TokenType::PlusQuantifier){
-//             if (i >= s.size() || !match_atom(tok, s[i])) return false; // add the bounds guard / /
-
-//             size_t max_k = consume_max(s, i, tok);
-            
-//         // For loop to ensure corner cases: Pattern: a+ab Input: aaab, Work it out and you will see
-//             for (size_t k = max_k; k >= 1; k--){
-//                 if (match_from(s, i+k, toks, j+2, start)) return true;
-//                 if (k == 1) break;
-//             }
-//             return false;
-//         }
-//         // QuestionQuantifier , also try to be greedy
-//         if (j + 1 < toks.size() && toks[j+1].type == TokenType::QuestionQuantifier){
-//             // try taking 1 if possible
-//             if (i < s.size() && match_atom(tok, s[i])){
-//                 if (match_from(s, i + 1, toks, j+2, start)) return true;
-//             }
-//             // try taking 0 (backtrack) the position of i matters.
-//             if (match_from(s, i, toks, j+2, start)) return true;
-//             return false;
-//         }
-
-//         if (tok.type == TokenType::LeftParen) {
-//             size_t r = find_rparen(toks, j);
-
-//             auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool{
-//                 auto sub = match_slice(s, pos, toks, j + 1, r, start);
-//                 if (!sub.ok) return false;
-//                 out_next_i = sub.next_i; 
-//                 return true;
-//             };
-
-//             bool has_plus = (r + 1 < toks.size() && toks[r + 1].type == TokenType::PlusQuantifier);
-//             bool has_q = (r + 1 < toks.size() && toks[r + 1].type == TokenType::QuestionQuantifier);
-            
-//             if (has_plus){
-//                 std::vector<size_t> ends;
-//                 size_t cur = i, next = i;
-
-//                 while (run_group_once(cur, next)){
-//                     if (next == cur) break;
-//                     ends.push_back(next);
-//                     cur = next;
-//                 }
-//                 if (ends.empty()) return false;
-
-//                 for (size_t k = ends.size(); k >= 1; --k){
-//                     size_t after = ends[k - 1];
-//                     if (match_from(s, after, toks, r + 2, start)) return true;
-//                     if (k == 1) break;
-//                 }
-//                 return false;
-//             } else if (has_q){
-//                 size_t after_once;
-//                 if (run_group_once(i, after_once)){
-//                     if (match_from(s, after_once, toks, r + 2, start)) return true;
-//                 }
-//                 return match_from(s, i, toks, r+2, start);
-//             }
-//             else {
-//                 size_t after_once;
-//                 if (!run_group_once(i, after_once)) return false;
-//                 i = after_once;
-//                 j = r + 1;
-//                 continue;
-//             }
-//         }
-
-//         // Question
-//         if ( i >= s.size() || !match_atom(tok, s[i])) return false;
-//         ++i;
-//         ++j;
-//     }
-//     return true;
-// }
-
 static bool match_from(const std::string& s,
                        size_t i,
                        const std::vector<Token>& toks,
@@ -453,31 +345,43 @@ int main(int argc, char* argv[]) {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std::cerr << "Logs from your program will appear here" << std::endl;
 
-    if (argc != 3) {
+    if (argc != 3 && argc != 4) {
+        std::cerr << "Usage: " << argv[0] << " -E <Pattern> [file]" << std::endl;
         std::cerr << "Expected two arguments" << std::endl;
         return 1;
     }
 
+
     std::string flag = argv[1];
     std::string pattern = argv[2];
+    
 
-    if (flag != "-E") {
-        std::cerr << "Expected first argument to be '-E'" << std::endl;
+    if (flag != "-E"){
+        std::cerr << "Expected frist argument to be '-E'" << std::endl;
         return 1;
     }
 
-    // Uncomment this block to pass the first stage
     
     std::string input_line;
-    std::getline(std::cin, input_line);
+    if (argc == 4) {
+        const char* filename = argv[3];
+        std::ifstream in(filename);
+        if (!in) {
+            std::cerr << "Error: Cannot Open File: " << filename << std::endl;
+            return 1;
+        }
+        std::getline(in, input_line);
+    } else {
+        std::getline(std::cin, input_line);
+    }
+
     DBG_PRINT("Tokenizing pattern: " << pattern);
 
     try {
         if (match_pattern(input_line, pattern)) {
-            printf("Pattern Matched\n");
+            std::cout << input_line << '\n';
             return 0;
         } else {
-            printf("Pattern Mismatched\n");
             return 1;
         }
     } catch (const std::runtime_error& e) {
