@@ -273,7 +273,7 @@ static bool match_from(const std::string& s,
 
         // PlusQuantifier takes effect on its preceding thing
         if (j + 1 < toks.size() && toks[j+1].type == TokenType::PlusQuantifier){
-            if (!match_atom(tok, s[i])) return false;
+            if (i >= s.size() || !match_atom(tok, s[i])) return false; // add the bounds guard / /
 
             size_t max_k = consume_max(s, i, tok);
             
@@ -297,21 +297,48 @@ static bool match_from(const std::string& s,
 
         if (tok.type == TokenType::LeftParen) {
             size_t r = find_rparen(toks, j);
-            auto alts = split_alts(toks, j + 1, r);
 
-            bool ok = false;
-            size_t after_i = i;
+            auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool{
+                auto sub = match_slice(s, pos, toks, j + 1, r, start);
+                if (!sub.ok) return false;
+                out_next_i = sub.next_i; 
+                return true;
+            };
 
-            for (auto [a, b] : alts) {
-                auto sub = match_slice(s, i, toks, a, b, start);
-                if (sub.ok) { ok = true; after_i = sub.next_i; break; }
+            bool has_plus = (r + 1 < toks.size() && toks[r + 1].type == TokenType::PlusQuantifier);
+            bool has_q = (r + 1 < toks.size() && toks[r + 1].type == TokenType::QuestionQuantifier);
+            
+            if (has_plus){
+                std::vector<size_t> ends;
+                size_t cur = i, next = i;
+
+                while (run_group_once(cur, next)){
+                    if (next == cur) break;
+                    ends.push_back(next);
+                    cur = next;
+                }
+                if (ends.empty()) return false;
+
+                for (size_t k = ends.size(); k >= 1; --k){
+                    size_t after = ends[k - 1];
+                    if (match_from(s, after, toks, r + 2, start)) return true;
+                    if (k == 1) break;
+                }
+                return false;
+            } else if (has_q){
+                size_t after_once;
+                if (run_group_once(i, after_once)){
+                    if (match_from(s, after_once, toks, r + 2, start)) return true;
+                }
+                return match_from(s, i, toks, r+2, start);
             }
-            if (!ok) return false;
-
-            // Advance past the group and keep matching the rest (like the trailing 's')
-            i = after_i;
-            j = r + 1;
-            continue;               // refresh tok at new j
+            else {
+                size_t after_once;
+                if (!run_group_once(i, after_once)) return false;
+                i = after_once;
+                j = r + 1;
+                continue;
+            }
         }
 
         // Question
