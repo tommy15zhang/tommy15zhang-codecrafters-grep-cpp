@@ -54,11 +54,17 @@ std::vector<Token> tokenize(const std::string& pattern){
             } else if (next == 'w'){
                 toks.push_back({TokenType::WordChar, ""});
                 i += 2;
-            } else if (std::isdigit(static_cast<unsigned char>(next))){
-                if (next == '1') toks.push_back({TokenType::BackRef, "1"});
-                else if (next == '2') toks.push_back({TokenType::BackRef, "2"});
-                else throw std::runtime_error("Only 1 and 2 are supported");
-                i += 2;
+            } else if (next >= '1' && next <= '9'){
+                size_t j = i + 1; // start at first digit
+                while (j < n && std::isdigit(static_cast<unsigned char>(pattern[j]))) {
+                    ++j;
+                }
+                // digits are [i+1, j)
+                toks.push_back({TokenType::BackRef, std::string(pattern.begin() + (i + 1),
+                                                                pattern.begin() + j)});
+                i = j;            // consume '\' and all digits
+                continue;
+                }
             } else {
                 toks.push_back({TokenType::Literal, std::string(1, next)});
                 i += 2;
