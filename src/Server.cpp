@@ -530,11 +530,11 @@ int main(int argc, char* argv[]) {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std::cerr << "Logs from your program will appear here" << std::endl;
 
-    if (argc != 3 && argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " -E <Pattern> [file]" << std::endl;
-        std::cerr << "Expected two arguments" << std::endl;
-        return 1;
-    }
+    // if (argc != 3 && argc != 4) {
+    //     std::cerr << "Usage: " << argv[0] << " -E <Pattern> [file]" << std::endl;
+    //     std::cerr << "Expected two arguments" << std::endl;
+    //     return 1;
+    // }
 
 
     std::string flag = argv[1];
