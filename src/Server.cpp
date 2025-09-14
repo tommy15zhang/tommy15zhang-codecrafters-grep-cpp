@@ -263,7 +263,7 @@ static void collect_group_ends(const std::string& s, size_t pos,
                   [](auto& A, auto& B){ return A.first > B.first; });
         return;
     }
-    
+
     std::function<void(size_t, size_t, MatchCtx)> dfs =
     [&](size_t i, size_t j, MatchCtx ctx)
     {
@@ -548,19 +548,36 @@ int main(int argc, char* argv[]) {
 
     
     std::string input_line;
-    if (argc == 4) {
-        const char* filename = argv[3];
-        std::ifstream in(filename);
-        if (!in) {
-            std::cerr << "Error: Cannot Open File: " << filename << std::endl;
-            return 1;
+    bool any_matched = false;
+    try {
+        if (argc == 4) {
+            const char* filename = argv[3];
+            std::ifstream in(filename);
+            if (!in) {
+                std::cerr << "Error: Cannot Open File: " << filename << std::endl;
+                return 1;
+            }
+            while (std::getline(in, input_line)){
+                if (match_pattern(input_line, pattern)){
+                    std::cout << input_line << std::endl;
+                    any_matched = true;
+                }
+            }
+        } else {
+            
+            while(std::getline(std::cin, input_line)){
+                if (match_pattern(input_line, pattern)){
+                    std::cout << input_line << std::endl;
+                    any_matched = true;
+                }
+            }
         }
-        std::getline(in, input_line);
-    } else {
-        std::getline(std::cin, input_line);
+    } catch (const std::runtime_error& e){
+        std::cerr << e.what() << std::endl;
+        return 1;
     }
 
-    DBG_PRINT("Tokenizing pattern: " << pattern);
+    return any_matched ? 0 : 1;
 
     try {
         if (match_pattern(input_line, pattern)) {
