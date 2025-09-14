@@ -237,33 +237,6 @@ struct SliceResult {
     MatchCtx ctx;
 };
 
-// Put this near the top of your file (static is fine)
-static void enumerate_slice_endings(const std::string& s, size_t i,
-                                    const std::vector<Token>& toks,
-                                    size_t a, size_t b, size_t start,
-                                    const MatchCtx& ctx_in,
-                                    std::vector<std::pair<size_t, MatchCtx>>& outs,
-                                    std::vector<int>& gid_at_open, int max_gid)
-{
-    // First, try the normal (greedy) match of the interior
-    auto sub = match_slice(s, i, toks, a, b, start, ctx_in, gid_at_open, max_gid);
-    if (!sub.ok) return;
-
-    // Record the greedy solution
-    outs.push_back({sub.next_i, sub.ctx});
-
-    // Heuristic backtracking: try shorter ends by 1 char at a time
-    // (good enough for +/? cases inside the group)
-    for (size_t end = sub.next_i; end > i; --end) {
-        auto try_sub = match_slice(s, i, toks, a, b, start, ctx_in, gid_at_open, max_gid);
-        if (try_sub.ok && try_sub.next_i == end) {
-            outs.push_back({end, try_sub.ctx});
-        }
-    }
-}
-
-
-
 static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start, MatchCtx ctx, std::vector<int>& gid_at_open, int max_gid){
     // Try to match the sub-pattern represented by tokens toks[j ... end_j] against the input string s starting at character index i
     // Return a struct {contain 2 values}. Ok: did this slice of pattern match successfully. next_i: if matched, where in th einput the match ended
@@ -388,32 +361,13 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
             }
             else {
                 // No quantifier: match exactly once and continue within this slice.
-                // size_t after_once;
-                // MatchCtx ctx_after;
-                // if (!run_group_once(i, ctx, after_once, ctx_after)) return {false, i, ctx};
-                // i = after_once;
-                // ctx = ctx_after;
-                // j = r + 1;  // move past ')'
-                // continue;   // keep matching the rest of the slice
-
-                // NEW: no quantifier on the group — try all possible endings (greedy → shorter)
-                std::vector<std::pair<size_t, MatchCtx>> ends;
-                enumerate_slice_endings(s, i, toks, j + 1, r, start, ctx, ends, gid_at_open, max_gid);
-                if (ends.empty()) return {false, i, ctx};
-
-                // Try in greedy order first (last recorded tends to be longest), then shorter
-                for (size_t idx = 0; idx < ends.size(); ++idx) {
-                    size_t end_pos = ends[ends.size() - 1 - idx].first;
-                    MatchCtx after_ctx = ends[ends.size() - 1 - idx].second;
-
-                    int gid = gid_at_open[j];
-                    if (gid > 0) after_ctx.groups[gid] = s.substr(i, end_pos - i);
-
-                    // Continue matching the rest of THIS SLICE right after ')'
-                    auto cont = match_slice(s, end_pos, toks, r + 1, end_j, start, after_ctx, gid_at_open, max_gid);
-                    if (cont.ok) return cont;
-                }
-                return {false, i, ctx};
+                size_t after_once;
+                MatchCtx ctx_after;
+                if (!run_group_once(i, ctx, after_once, ctx_after)) return {false, i, ctx};
+                i = after_once;
+                ctx = ctx_after;
+                j = r + 1;  // move past ')'
+                continue;   // keep matching the rest of the slice
             }
         }
         // regular atom
