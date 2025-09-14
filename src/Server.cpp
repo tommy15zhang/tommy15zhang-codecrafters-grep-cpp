@@ -237,17 +237,17 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
     for (size_t k = j; k < end_j; ++k) {
         if (toks[k].type == TokenType::LeftParen){
             ++depth;
-            DBG_PRINT("Found (");
-            DBG_PRINT("Depth: " << depth);
+            // DBG_PRINT("Found (");
+            // DBG_PRINT("Depth: " << depth);
         }
         else if (toks[k].type == TokenType::RigthParen){
             --depth;
-            DBG_PRINT("Found )");
-            DBG_PRINT("Depth: " << depth);
+            // DBG_PRINT("Found )");
+            // DBG_PRINT("Depth: " << depth);
         }
         else if (toks[k].type == TokenType::Alternation && depth == 0) {
-            DBG_PRINT("Found |");
-            DBG_PRINT("Depth " << depth);
+            // DBG_PRINT("Found |");
+            // DBG_PRINT("Depth " << depth);
             has_bar = true; break;
         }
     }
