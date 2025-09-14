@@ -566,7 +566,7 @@ int main(int argc, char* argv[]) {
                 std::ifstream in(filename);
                 if (!in){
                     std::cerr << "Error Cannot Open File: " << filename << std::endl;
-                    conitnue;
+                    continue;
                 }
                 std::string input_line;
                 while (std::getline(in, input_line)){
