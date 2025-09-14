@@ -245,6 +245,25 @@ static void collect_group_ends(const std::string& s, size_t pos,
                                std::vector<std::pair<size_t, MatchCtx>>& ends,
                                std::vector<int>& gid_at_open, int max_gid)
 {
+    size_t depth = 0;
+    bool has_bar = false;
+    for (size_t k = L; k < R; ++k) {
+        if (toks[k].type == TokenType::LeftParen) ++depth;
+        else if (toks[k].type == TokenType::RigthParen) --depth;
+        else if (toks[k].type == TokenType::Alternation && depth == 0) {
+            has_bar = true; break;
+        }
+    }
+    if (has_bar) {
+        auto parts = split_alts(toks, L, R);
+        for (auto [a, b] : parts) {
+            collect_group_ends(s, pos, toks, a, b, start, ctx_in, ends, gid_at_open, max_gid);
+        }
+        std::sort(ends.begin(), ends.end(),
+                  [](auto& A, auto& B){ return A.first > B.first; });
+        return;
+    }
+    
     std::function<void(size_t, size_t, MatchCtx)> dfs =
     [&](size_t i, size_t j, MatchCtx ctx)
     {
