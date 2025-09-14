@@ -4,6 +4,7 @@
 #include <vector>
 #include <fstream>
 #include <optional>
+#include <functional>
 #define DEBUG 1   // uncomment to enable debug
 
 #ifdef DEBUG
@@ -237,6 +238,80 @@ struct SliceResult {
     MatchCtx ctx;
 };
 
+
+static void collect_group_ends(const std::string& s, size_t pos,
+                               const std::vector<Token>& toks, size_t L, size_t R,
+                               size_t start, const MatchCtx& ctx_in,
+                               std::vector<std::pair<size_t, MatchCtx>>& ends,
+                               std::vector<int>& gid_at_open, int max_gid)
+{
+    std::function<void(size_t, size_t, MatchCtx)> dfs =
+    [&](size_t i, size_t j, MatchCtx ctx)
+    {
+        // Success: matched the interior [L, R)
+        if (j == R) { ends.push_back({i, ctx}); return; }
+
+        const Token& tok = toks[j];
+
+        // Anchors assert at current i
+        if (tok.type == TokenType::StartAnchor) { if (i != 0) return; dfs(i, j+1, ctx); return; }
+        if (tok.type == TokenType::EndAnchor)   { if (i != s.size()) return; dfs(i, j+1, ctx); return; }
+
+        // Atom +
+        if (j + 1 < R && toks[j+1].type == TokenType::PlusQuantifier) {
+            if (i >= s.size() || !match_atom(tok, s[i])) return;
+            size_t max_k = consume_max(s, i, tok);
+            for (size_t k = max_k; k > 0; --k) dfs(i + k, j + 2, ctx); // greedy → short
+            return;
+        }
+
+        // Atom ?
+        if (j + 1 < R && toks[j+1].type == TokenType::QuestionQuantifier) {
+            if (i < s.size() && match_atom(tok, s[i])) dfs(i + 1, j + 2, ctx); // take it
+            dfs(i, j + 2, ctx);                                               // or skip
+            return; // IMPORTANT: don’t fall through
+        }
+
+        // Nested groups
+        if (tok.type == TokenType::LeftParen) {
+            size_t r2 = find_rparen(toks, j);        // use r2 consistently
+            int gid2 = gid_at_open[j];
+
+            // Collect all ends of this nested group
+            std::vector<std::pair<size_t, MatchCtx>> inner;
+            collect_group_ends(s, i, toks, j+1, r2, start, ctx, inner, gid_at_open, max_gid);
+
+            // Try greedy → short
+            std::sort(inner.begin(), inner.end(),
+                      [](auto& a, auto& b){ return a.first > b.first; });
+
+            for (auto& [after_once, ctx_after] : inner) {
+                if (gid2 > 0) {
+                    MatchCtx ctx_set = ctx_after;
+                    ctx_set.groups[gid2] = s.substr(i, after_once - i);
+                    dfs(after_once, r2 + 1, ctx_set);
+                } else {
+                    dfs(after_once, r2 + 1, ctx_after);
+                }
+            }
+            return;
+        }
+
+        // Plain atom
+        if (i < s.size() && match_atom(tok, s[i])) {
+            dfs(i + 1, j + 1, ctx);
+        }
+        // else dead-end
+    };
+
+    dfs(pos, L, ctx_in);
+
+    // Greedy-first order for callers
+    std::sort(ends.begin(), ends.end(),
+              [](auto& a, auto& b){ return a.first > b.first; });
+}
+
+
 static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start, MatchCtx ctx, std::vector<int>& gid_at_open, int max_gid){
     // Try to match the sub-pattern represented by tokens toks[j ... end_j] against the input string s starting at character index i
     // Return a struct {contain 2 values}. Ok: did this slice of pattern match successfully. next_i: if matched, where in th einput the match ended
@@ -270,7 +345,7 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
     while (j < end_j){
         const Token& tok = toks[j];
         // anchors work the same
-        if (tok.type == TokenType::StartAnchor){ if (start != 0) return {false, i, ctx}; ++j; continue; }
+        if (tok.type == TokenType::StartAnchor){ if (i != 0) return {false, i, ctx}; ++j; continue; }
         if (tok.type == TokenType::EndAnchor){ if (i != s.size()) return {false, i, ctx}; ++j; continue; }
 
         // quantifiers on atoms inside a slice (your existing + / ? branches)
@@ -360,22 +435,37 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 return match_slice(s, i, toks, r + 2, end_j, start, ctx, gid_at_open, max_gid);
             }
             else {
-                // No quantifier: match exactly once and continue within this slice.
-                size_t after_once;
-                MatchCtx ctx_after;
-                if (!run_group_once(i, ctx, after_once, ctx_after)) return {false, i, ctx};
-                i = after_once;
-                ctx = ctx_after;
-                j = r + 1;  // move past ')'
-                continue;   // keep matching the rest of the slice
-            }
+               std::vector<std::pair<size_t, MatchCtx>> ends;
+                collect_group_ends(s, i, toks, j+1, r, start, ctx, ends, gid_at_open, max_gid);
+                if (ends.empty()) return {false, i, ctx};
+
+                for (auto& [after_once, ctx_after] : ends) {
+                    if (gid > 0) {
+                        MatchCtx ctx_set = ctx_after;
+                        ctx_set.groups[gid] = s.substr(i, after_once - i);
+                        auto cont = match_slice(s, after_once, toks, r + 1, end_j, start, ctx_set, gid_at_open, max_gid);
+                        if (cont.ok) return cont;
+                    } else {
+                        auto cont = match_slice(s, after_once, toks, r + 1, end_j, start, ctx_after, gid_at_open, max_gid);
+                        if (cont.ok) return cont;
+                    }
+                }
+            return {false, i, ctx};
         }
         // regular atom
-        if (i >= s.size() || !match_atom(tok, s[i])) return {false, i, ctx};
-        ++i; ++j;
+        if (i >= s.size() || !match_atom(tok, s[i])) {
+            DBG_PRINT("FAIL at token j=" << j
+                    << " type=" << (int)tok.type
+                    << " input i=" << i
+                    << " char=" << (i < s.size() ? std::string(1, s[i]) : "<eos>"));
+            return {false, i, ctx};
+        }
     }
+        ++i; ++j;
+    } // <== closes: while (j < end_j)
+
     return {true, i, ctx};
-}
+} // <== closes: static SliceResult match_slice(...)
 
 static bool match_from(const std::string& s,
                        size_t i,
