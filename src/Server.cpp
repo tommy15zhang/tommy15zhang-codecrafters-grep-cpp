@@ -237,9 +237,8 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
         for (auto [a, b] : parts) {
             auto sub = match_slice(s, i, toks, a, b, start, ctx);
             if (sub.ok) return sub;   // succeed on the first branch that works
-            return {false, i, ctx};
         }
-        return {false, i};            // all branches failed
+        return {false, i, ctx};            // all branches failed
     }
     while (j < end_j){
         const Token& tok = toks[j];
@@ -268,10 +267,10 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
             return {false,i, ctx};
         }
         if (tok.type == TokenType::BackRef){
-            if (!ctx.has_g1) return {false, i, ctx};
+            if (!ctx.has_g1) return {false, i, ctx}; // hit \1 without group 1 is an immediate mismatch
             const std::string& pat = ctx.g1;
-            if (i + pat.size() > s.size()) return {false, i, ctx};
-            if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx};
+            if (i + pat.size() > s.size()) return {false, i, ctx}; // bound check, make sure enough character left
+            if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx}; // see if pat match with same amount of character
             i += pat.size();
             ++j;
             continue;
