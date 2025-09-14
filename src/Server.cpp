@@ -550,25 +550,30 @@ int main(int argc, char* argv[]) {
     std::string input_line;
     bool any_matched = false;
     try {
-        if (argc == 4) {
-            const char* filename = argv[3];
-            std::ifstream in(filename);
-            if (!in) {
-                std::cerr << "Error: Cannot Open File: " << filename << std::endl;
-                return 1;
-            }
-            while (std::getline(in, input_line)){
+        if (argc == 3){
+            while(std::getline(std::cin, input_line)){
                 if (match_pattern(input_line, pattern)){
                     std::cout << input_line << std::endl;
                     any_matched = true;
                 }
             }
         } else {
-            
-            while(std::getline(std::cin, input_line)){
+            int file_count = argc - 3;
+            bool show_prefix = (file_count > 1);
+
+            for (int idx = 3; idx < argc ; ++idx){
+                const char* filename = argv[idx];
+                std::ifstream in(filename);
+                if (!in){
+                    std::cerr << "Error Cannot Open File: " << filename << std::endl;
+                    conitnue;
+                }
+                std::string input_line;
+                while (std::getline(in, input_line)){
                 if (match_pattern(input_line, pattern)){
                     std::cout << input_line << std::endl;
                     any_matched = true;
+                    }
                 }
             }
         }
@@ -578,16 +583,4 @@ int main(int argc, char* argv[]) {
     }
 
     return any_matched ? 0 : 1;
-
-    try {
-        if (match_pattern(input_line, pattern)) {
-            std::cout << input_line << '\n';
-            return 0;
-        } else {
-            return 1;
-        }
-    } catch (const std::runtime_error& e) {
-        std::cerr << e.what() << std::endl;
-        return 1;
-    }
 }
