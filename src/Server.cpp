@@ -450,9 +450,11 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                         if (cont.ok) return cont;
                     }
                 }
-            return {false, i, ctx};
-        }
+                return {false, i, ctx};
+            }
+            j = r + 1;
         // regular atom
+        }
         if (i >= s.size() || !match_atom(tok, s[i])) {
             DBG_PRINT("FAIL at token j=" << j
                     << " type=" << (int)tok.type
@@ -460,7 +462,6 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                     << " char=" << (i < s.size() ? std::string(1, s[i]) : "<eos>"));
             return {false, i, ctx};
         }
-    }
         ++i; ++j;
     } // <== closes: while (j < end_j)
 
