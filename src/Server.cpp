@@ -64,6 +64,7 @@ std::vector<Token> tokenize(const std::string& pattern){
                 toks.push_back({TokenType::BackRef, std::string(pattern.begin() + (i + 1),
                                                                 pattern.begin() + j)});
                 i = j;            // consume '\' and all digits
+                DBG_PRINT("Created BackRef token: \\" << toks.back().data);
                 continue;
             } else {
                 toks.push_back({TokenType::Literal, std::string(1, next)});
@@ -293,14 +294,16 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
         }
         if (tok.type == TokenType::BackRef){
             int gid = std::stoi(tok.data);
-            if (gid <= 0 || gid >= (int)ctx.groups.size() || !ctx.groups[gid].has_value()) return {false, i, ctx}; //check
-
+            DBG_PRINT("Matching BackRef \\" << gid 
+                    << " ; has=" << (gid < (int)ctx.groups.size() && ctx.groups[gid].has_value()));
+            if (gid <= 0 || gid >= (int)ctx.groups.size() || !ctx.groups[gid].has_value())
+                return {false, i, ctx};
             const std::string& pat = *ctx.groups[gid];
-            if (i + pat.size() > s.size()) return {false, i, ctx}; // bound check, make sure enough character left
-            if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx}; // see if pat match with same amount of character
+            DBG_PRINT("BackRef text = \"" << pat << "\" at input pos " << i);
+            if (i + pat.size() > s.size()) return {false, i, ctx};
+            if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx};
             i += pat.size(); ++j; continue;
         }
-
         if (tok.type == TokenType::LeftParen){
             size_t r = find_rparen(toks, j);
             int gid = gid_at_open[j];
