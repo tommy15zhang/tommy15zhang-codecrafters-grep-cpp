@@ -5,6 +5,8 @@
 #include <fstream>
 #include <optional>
 #include <functional>
+#include <filesystem>  // C++17
+
 #define DEBUG 1   // uncomment to enable debug
 
 #ifdef DEBUG
@@ -541,13 +543,30 @@ int main(int argc, char* argv[]) {
     std::string pattern = argv[2];
     
 
-    if (flag != "-E"){
-        std::cerr << "Expected frist argument to be '-E'" << std::endl;
-        return 1;
-    }
-
+    // if (flag != "-E"){
+    //     std::cerr << "Expected frist argument to be '-E'" << std::endl;
+    //     return 1;
+    // }
     
     bool any_matched = false;
+    if (flag == "-r"){
+        std::string pattern = argv[3];
+        std::string dir = argv[4];
+
+        for (auto& entry : std::filesystem::recursive_directory_iterator(dir)){
+            if (entry.is_regular_file()){
+                std::ifstream in(entry.path());
+                std::string input_line;
+                while (std::getline(in, input_line)){
+                    if (match_pattern(line, pattern)){
+                        std::cout << entry.path().string() << ":" << line << "\n";
+                        any_matched = true;
+                    }
+                }
+            }
+        }
+        return any_matched ? 0 : 1;
+    }
     try {
         if (argc == 3){
             std::string input_line;
