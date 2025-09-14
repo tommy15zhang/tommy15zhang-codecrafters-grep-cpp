@@ -558,7 +558,7 @@ int main(int argc, char* argv[]) {
                 std::ifstream in(entry.path());
                 std::string input_line;
                 while (std::getline(in, input_line)){
-                    if (match_pattern(line, pattern)){
+                    if (match_pattern(input_line, pattern)){
                         std::cout << entry.path().string() << ":" << line << "\n";
                         any_matched = true;
                     }
