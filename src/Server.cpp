@@ -37,6 +37,7 @@ struct Token
 };
 
  // only for the pattern
+ //const std::string& -> I don’t want to copy the string, but I promise not to change it.
 std::vector<Token> tokenize(const std::string& pattern){
     std::vector<Token> toks;
     std::size_t i = 0, n = pattern.size();
@@ -64,7 +65,6 @@ std::vector<Token> tokenize(const std::string& pattern){
                                                                 pattern.begin() + j)});
                 i = j;            // consume '\' and all digits
                 continue;
-                }
             } else {
                 toks.push_back({TokenType::Literal, std::string(1, next)});
                 i += 2;
