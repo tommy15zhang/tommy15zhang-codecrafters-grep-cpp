@@ -254,9 +254,17 @@ static void collect_group_ends(const std::string& s, size_t pos,
         const Token& tok = toks[j];
 
         // Anchors assert at current i
-        if (tok.type == TokenType::StartAnchor) { if (i != 0) return; dfs(i, j+1, ctx); return; }
+        if (tok.type == TokenType::StartAnchor) { if (start != 0) return; dfs(i, j+1, ctx); return; }
         if (tok.type == TokenType::EndAnchor)   { if (i != s.size()) return; dfs(i, j+1, ctx); return; }
-
+        if (tok.type == TokenType::BackRef) {
+            int gid = std::stoi(tok.data);
+            if (gid <= 0 || gid >= (int)ctx.groups.size() || !ctx.groups[gid].has_value()) return;
+            const std::string& pat = *ctx.groups[gid];
+            if (i + pat.size() > s.size()) return;
+            if (s.compare(i, pat.size(), pat) != 0) return;
+            dfs(i + pat.size(), j + 1, ctx);
+            return;
+        }
         // Atom +
         if (j + 1 < R && toks[j+1].type == TokenType::PlusQuantifier) {
             if (i >= s.size() || !match_atom(tok, s[i])) return;
