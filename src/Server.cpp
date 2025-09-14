@@ -435,7 +435,7 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 return match_slice(s, i, toks, r + 2, end_j, start, ctx, gid_at_open, max_gid);
             }
             else {
-               std::vector<std::pair<size_t, MatchCtx>> ends;
+                std::vector<std::pair<size_t, MatchCtx>> ends;
                 collect_group_ends(s, i, toks, j+1, r, start, ctx, ends, gid_at_open, max_gid);
                 if (ends.empty()) return {false, i, ctx};
 
@@ -452,9 +452,8 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 }
                 return {false, i, ctx};
             }
-            j = r + 1;
-            continue;
-        // regular atom
+            j = r + 1; // <-- Move this OUTSIDE the else block
+            continue;  // <-- Move this OUTSIDE the else block
         }
         if (i >= s.size() || !match_atom(tok, s[i])) {
             DBG_PRINT("FAIL at token j=" << j
