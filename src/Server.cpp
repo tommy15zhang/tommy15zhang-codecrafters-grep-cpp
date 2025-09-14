@@ -547,10 +547,11 @@ int main(int argc, char* argv[]) {
     }
 
     
-    std::string input_line;
     bool any_matched = false;
     try {
         if (argc == 3){
+            std::string input_line;
+
             while(std::getline(std::cin, input_line)){
                 if (match_pattern(input_line, pattern)){
                     std::cout << input_line << std::endl;
@@ -559,7 +560,7 @@ int main(int argc, char* argv[]) {
             }
         } else {
             int file_count = argc - 3;
-            // bool show_prefix = (file_count > 1);
+            bool show_prefix = (file_count > 1); 
 
             for (int idx = 3; idx < argc ; ++idx){
                 const char* filename = argv[idx];
@@ -568,11 +569,17 @@ int main(int argc, char* argv[]) {
                     std::cerr << "Error Cannot Open File: " << filename << std::endl;
                     continue;
                 }
+
+                std::string input_line;
                 while (std::getline(in, input_line)){
-                if (match_pattern(input_line, pattern)){
-                    std::cout << input_line << std::endl;
-                    any_matched = true;
-                    }
+                    if (match_pattern(input_line, pattern)){
+                        if (show_prefix) {
+                            std::cout << filename << ':' << line << '\n';
+                        } else {
+                            std::cout << line << '\n';
+                        }
+                        any_matched = true;
+                    } 
                 }
             }
         }
