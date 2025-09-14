@@ -453,6 +453,7 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 return {false, i, ctx};
             }
             j = r + 1;
+            continue;
         // regular atom
         }
         if (i >= s.size() || !match_atom(tok, s[i])) {
