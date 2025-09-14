@@ -26,7 +26,8 @@ enum class TokenType {
     AnyChar,
     LeftParen, // (
     RigthParen, // )
-    Alternation // |
+    Alternation, // |
+    BackRef // \1 backreference: reuse a captured group 
 };
 
 struct Token
@@ -53,7 +54,11 @@ std::vector<Token> tokenize(const std::string& pattern){
             } else if (next == 'w'){
                 toks.push_back({TokenType::WordChar, ""});
                 i += 2;
-            } else {
+            } else if (next == '1'){
+                toks.push_back({TokenType::BackRef, "1"});
+                i += 2;
+            }
+            else {
                 toks.push_back({TokenType::Literal, std::string(1, next)});
                 i += 2;
             }
@@ -194,10 +199,18 @@ static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
     }
     throw std::runtime_error("Unmatched '('");
 }
+struct MatchCtx {
+    bool has_g1 = false;
+    std::string g1;
+};
 
-struct SliceResult {bool ok; size_t next_i; };
+struct SliceResult {
+    bool ok; 
+    size_t next_i;
+    MatchCtx ctx;
+};
 
-static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start){
+static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start, MatchCtx ctx){
     // Try to match the sub-pattern represented by tokens toks[j ... end_j] against the input string s starting at character index i
     // Return a struct {contain 2 values}. Ok: did this slice of pattern match successfully. next_i: if matched, where in th einput the match ended
     size_t depth = 0;
@@ -222,8 +235,9 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
     if (has_bar) {
         auto parts = split_alts(toks, j, end_j); // split on top-level '|'
         for (auto [a, b] : parts) {
-            auto sub = match_slice(s, i, toks, a, b, start);
+            auto sub = match_slice(s, i, toks, a, b, start, ctx);
             if (sub.ok) return sub;   // succeed on the first branch that works
+            return {false, i, ctx};
         }
         return {false, i};            // all branches failed
     }
@@ -238,31 +252,47 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
             if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
             size_t max_k = consume_max(s, i, tok);
             for (size_t k = max_k; k >= 1; --k){
-                auto sub = match_slice(s, i + k, toks, j + 2, end_j, start);
+                auto sub = match_slice(s, i + k, toks, j + 2, end_j, start, ctx);
                 if (sub.ok) return sub;
                 if (k == 1) break;
             }
-            return {false,i};
+            return {false,i, ctx};
         }
         if (j + 1 < end_j && toks[j+1].type == TokenType::QuestionQuantifier){
             if (i < s.size() && match_atom(tok, s[i])){
-                auto sub1 = match_slice(s, i + 1, toks, j + 2, end_j, start);
+                auto sub1 = match_slice(s, i + 1, toks, j + 2, end_j, start, ctx);
                 if (sub1.ok) return sub1;
             }
-            auto sub0 = match_slice(s, i, toks, j + 2, end_j, start);
+            auto sub0 = match_slice(s, i, toks, j + 2, end_j, start, ctx);
             if (sub0.ok) return sub0;
-            return {false,i};
+            return {false,i, ctx};
+        }
+        if (tok.type == TokenType::BackRef){
+            if (!ctx.has_g1) return {false, i, ctx};
+            const std::string& pat = ctx.g1;
+            if (i + pat.size() > s.size()) return {false, i, ctx};
+            if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx};
+            i += pat.size();
+            ++j;
+            continue;
         }
 
         if (tok.type == TokenType::LeftParen){
             size_t r = find_rparen(toks, j);
 
             // Match the group interior [j+1, r) exactly once from input index `pos`.
-            auto run_group_once = [&](size_t pos, size_t& out_next_i) -> bool {
-                auto sub = match_slice(s, pos, toks, j + 1, r, start);
+            auto run_group_once = [&](size_t pos, MatchCtx& ctx_in, size_t& out_next_i, MatchCtx& out_ctx) -> bool {
+                auto sub = match_slice(s, pos, toks, j + 1, r, start, ctx_in);
                 if (!sub.ok) return false;
                 out_next_i = sub.next_i;  // where the group finished in the input
                 // next_i tell exactly where to continue after the group
+                out_ctx = sub.ctx;
+
+                // if we haven't set g1 yest, treat this pair as group 1 for this stage:
+                if (!out_ctx.has_g1){
+                    out_ctx.has_g1 = true;
+                    out_ctx.g1 = s.substr(pos, out_next_i - pos);
+                }
                 return true;
             };
 
@@ -272,39 +302,44 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
 
             if (has_plus) {
                 // Greedy repeat the whole group and record every end position.
-                std::vector<size_t> ends;
+                std::vector<std::pair<size_t, MatchCtx>> ends;
                 size_t cur = i, next = i;
-                while (run_group_once(cur, next)) {
+                MatchCtx cur_ctx = ctx;
+                while (run_group_once(cur, cur_ctx, next, cur_ctx)) {
                     if (next == cur) break;        // safety against empty group
-                    ends.push_back(next);
+                    ends.push_back({next, cur_ctx});
                     cur = next;
                 }
-                if (ends.empty()) return {false, i}; // '+' requires at least one
+                if (ends.empty()) return {false, i, ctx}; // '+' requires at least one
 
                 // Backtrack: try k repetitions from max down to 1.
                 for (size_t k = ends.size(); k >= 1; --k) {
-                    size_t after = ends[k - 1];
-                    auto cont = match_slice(s, after, toks, r + 2, end_j, start); // skip ')' and '+'
+                    size_t after = ends[k - 1].first;
+                    MatchCtx after_ctx = ends[k-1].second;
+                    auto cont = match_slice(s, after, toks, r + 2, end_j, start, after_ctx); // skip ')' and '+'
                     if (cont.ok) return cont;
                     if (k == 1) break; // prevent size_t underflow
                 }
-                return {false, i};
+                return {false, i, ctx};
             }
             else if (has_q) {
                 // Try once (greedy)…
                 size_t after_once;
-                if (run_group_once(i, after_once)) {
-                    auto cont1 = match_slice(s, after_once, toks, r + 2, end_j, start);
+                MatchCtx ctx_after_once;
+                if (run_group_once(i, ctx, after_once, ctx_after_once)) {
+                    auto cont1 = match_slice(s, after_once, toks, r + 2, end_j, start, ctx_after_once);
                     if (cont1.ok) return cont1;
                 }
                 // …or skip it.
-                return match_slice(s, i, toks, r + 2, end_j, start);
+                return match_slice(s, i, toks, r + 2, end_j, start, ctx);
             }
             else {
                 // No quantifier: match exactly once and continue within this slice.
                 size_t after_once;
-                if (!run_group_once(i, after_once)) return {false, i};
+                MatchCtx ctx_after;
+                if (!run_group_once(i, ctx, after_once, ctx_after)) return {false, i, ctx};
                 i = after_once;
+                ctx = ctx_after;
                 j = r + 1;  // move past ')'
                 continue;   // keep matching the rest of the slice
             }
@@ -321,7 +356,7 @@ static bool match_from(const std::string& s,
                        const std::vector<Token>& toks,
                        size_t j,
                        size_t start){
-    auto sub = match_slice(s, i, toks, 0, toks.size(), start);
+    auto sub = match_slice(s, i, toks, 0, toks.size(), start, MatchCtx{});
     return sub.ok;
 }
 bool match_pattern(const std::string& input_line, const std::string& pattern) {
