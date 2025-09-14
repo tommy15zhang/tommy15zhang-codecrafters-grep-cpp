@@ -559,7 +559,7 @@ int main(int argc, char* argv[]) {
                 std::string input_line;
                 while (std::getline(in, input_line)){
                     if (match_pattern(input_line, pattern)){
-                        std::cout << entry.path().string() << ":" << line << "\n";
+                        std::cout << entry.path().string() << ":" << input_line << "\n";
                         any_matched = true;
                     }
                 }
