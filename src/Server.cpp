@@ -574,9 +574,9 @@ int main(int argc, char* argv[]) {
                 while (std::getline(in, input_line)){
                     if (match_pattern(input_line, pattern)){
                         if (show_prefix) {
-                            std::cout << filename << ':' << line << '\n';
+                            std::cout << filename << ':' << input_line << '\n';
                         } else {
-                            std::cout << line << '\n';
+                            std::cout << input_line << '\n';
                         }
                         any_matched = true;
                     } 
