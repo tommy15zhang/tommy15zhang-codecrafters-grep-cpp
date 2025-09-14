@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 #include <fstream>
-
+#include <optional>
 #define DEBUG 1   // uncomment to enable debug
 
 #ifdef DEBUG
@@ -54,11 +54,12 @@ std::vector<Token> tokenize(const std::string& pattern){
             } else if (next == 'w'){
                 toks.push_back({TokenType::WordChar, ""});
                 i += 2;
-            } else if (next == '1'){
-                toks.push_back({TokenType::BackRef, "1"});
+            } else if (std::isdigit(static_cast<unsigned char>(next))){
+                if (next == '1') toks.push_back({TokenType::BackRef, "1"});
+                else if (next == '2') toks.push_back({TokenType::BackRef, "2"});
+                else throw std::runtime_error("Only 1 and 2 are supported");
                 i += 2;
-            }
-            else {
+            } else {
                 toks.push_back({TokenType::Literal, std::string(1, next)});
                 i += 2;
             }
@@ -199,9 +200,27 @@ static size_t find_rparen(const std::vector<Token>& toks, size_t open_j){
     }
     throw std::runtime_error("Unmatched '('");
 }
+
+
+static std::vector<int> number_groups(const std::vector<Token>& toks, int& max_gid){
+    std::vector<int> gid_at_open(toks.size(), -1);
+    int next = 1;
+    std::vector<size_t> stack;
+    for (size_t j = 0; j < toks.size(); ++j){
+        if (toks[j].type == TokenType::LeftParen){
+            gid_at_open[j] = next++;
+            stack.push_back(j);
+        } else if (toks[j].type == TokenType::RigthParen){
+            if (stack.empty()) throw std::runtime_error("Unmatched ')");
+            stack.pop_back();
+        }
+    }
+    if (!stack.empty()) throw std::runtime_error("Unmatched ')");
+    max_gid = next - 1; //for debug purpose
+    return gid_at_open;
+}
 struct MatchCtx {
-    bool has_g1 = false;
-    std::string g1;
+    std::vector<std::optional<std::string>> groups;
 };
 
 struct SliceResult {
@@ -210,7 +229,7 @@ struct SliceResult {
     MatchCtx ctx;
 };
 
-static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start, MatchCtx ctx){
+static SliceResult match_slice (const std::string& s, size_t i, const std::vector<Token>& toks, size_t j, size_t end_j, size_t start, MatchCtx ctx, std::vector<int>& gid_at_open, int max_gid){
     // Try to match the sub-pattern represented by tokens toks[j ... end_j] against the input string s starting at character index i
     // Return a struct {contain 2 values}. Ok: did this slice of pattern match successfully. next_i: if matched, where in th einput the match ended
     size_t depth = 0;
@@ -235,23 +254,23 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
     if (has_bar) {
         auto parts = split_alts(toks, j, end_j); // split on top-level '|'
         for (auto [a, b] : parts) {
-            auto sub = match_slice(s, i, toks, a, b, start, ctx);
+            auto sub = match_slice(s, i, toks, a, b, start, ctx, gid_at_open, max_gid);
             if (sub.ok) return sub;   // succeed on the first branch that works
         }
-        return {false, i, ctx};            // all branches failed
+        return {false, i, ctx};            // only fail after trying all branch
     }
     while (j < end_j){
         const Token& tok = toks[j];
         // anchors work the same
-        if (tok.type == TokenType::StartAnchor){ if (start != 0) return {false,i}; ++j; continue; }
-        if (tok.type == TokenType::EndAnchor){ if (i != s.size()) return {false,i}; ++j; continue; }
+        if (tok.type == TokenType::StartAnchor){ if (start != 0) return {false, i, ctx}; ++j; continue; }
+        if (tok.type == TokenType::EndAnchor){ if (i != s.size()) return {false, i, ctx}; ++j; continue; }
 
         // quantifiers on atoms inside a slice (your existing + / ? branches)
         if (j + 1 < end_j && toks[j+1].type == TokenType::PlusQuantifier){
-            if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
+            if (i >= s.size() || !match_atom(tok, s[i])) return {false, i, ctx};
             size_t max_k = consume_max(s, i, tok);
             for (size_t k = max_k; k >= 1; --k){
-                auto sub = match_slice(s, i + k, toks, j + 2, end_j, start, ctx);
+                auto sub = match_slice(s, i + k, toks, j + 2, end_j, start, ctx, gid_at_open, max_gid);
                 if (sub.ok) return sub;
                 if (k == 1) break;
             }
@@ -259,39 +278,37 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
         }
         if (j + 1 < end_j && toks[j+1].type == TokenType::QuestionQuantifier){
             if (i < s.size() && match_atom(tok, s[i])){
-                auto sub1 = match_slice(s, i + 1, toks, j + 2, end_j, start, ctx);
+                auto sub1 = match_slice(s, i + 1, toks, j + 2, end_j, start, ctx, gid_at_open, max_gid);
                 if (sub1.ok) return sub1;
             }
-            auto sub0 = match_slice(s, i, toks, j + 2, end_j, start, ctx);
+            auto sub0 = match_slice(s, i, toks, j + 2, end_j, start, ctx, gid_at_open, max_gid);
             if (sub0.ok) return sub0;
             return {false,i, ctx};
         }
         if (tok.type == TokenType::BackRef){
-            if (!ctx.has_g1) return {false, i, ctx}; // hit \1 without group 1 is an immediate mismatch
-            const std::string& pat = ctx.g1;
+            int gid = std::stoi(tok.data);
+            if (gid <= 0 || gid >= (int)ctx.groups.size() || !ctx.groups[gid].has_value()) return {false, i, ctx}; //check
+
+            const std::string& pat = *ctx.groups[gid];
             if (i + pat.size() > s.size()) return {false, i, ctx}; // bound check, make sure enough character left
             if (s.compare(i, pat.size(), pat) != 0) return {false, i, ctx}; // see if pat match with same amount of character
-            i += pat.size();
-            ++j;
-            continue;
+            i += pat.size(); ++j; continue;
         }
 
         if (tok.type == TokenType::LeftParen){
             size_t r = find_rparen(toks, j);
+            int gid = gid_at_open[j];
 
             // Match the group interior [j+1, r) exactly once from input index `pos`.
             auto run_group_once = [&](size_t pos, MatchCtx& ctx_in, size_t& out_next_i, MatchCtx& out_ctx) -> bool {
-                auto sub = match_slice(s, pos, toks, j + 1, r, start, ctx_in);
+                auto sub = match_slice(s, pos, toks, j + 1, r, start, ctx_in, gid_at_open, max_gid);
                 if (!sub.ok) return false;
                 out_next_i = sub.next_i;  // where the group finished in the input
                 // next_i tell exactly where to continue after the group
                 out_ctx = sub.ctx;
 
                 // if we haven't set g1 yest, treat this pair as group 1 for this stage:
-                if (!out_ctx.has_g1){
-                    out_ctx.has_g1 = true;
-                    out_ctx.g1 = s.substr(pos, out_next_i - pos);
-                }
+                if (gid > 0) out_ctx.groups[gid] = s.substr(pos, out_next_i - pos);
                 return true;
             };
 
@@ -315,7 +332,7 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 for (size_t k = ends.size(); k >= 1; --k) {
                     size_t after = ends[k - 1].first;
                     MatchCtx after_ctx = ends[k-1].second;
-                    auto cont = match_slice(s, after, toks, r + 2, end_j, start, after_ctx); // skip ')' and '+'
+                    auto cont = match_slice(s, after, toks, r + 2, end_j, start, after_ctx, gid_at_open, max_gid); // skip ')' and '+'
                     if (cont.ok) return cont;
                     if (k == 1) break; // prevent size_t underflow
                 }
@@ -326,11 +343,11 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
                 size_t after_once;
                 MatchCtx ctx_after_once;
                 if (run_group_once(i, ctx, after_once, ctx_after_once)) {
-                    auto cont1 = match_slice(s, after_once, toks, r + 2, end_j, start, ctx_after_once);
+                    auto cont1 = match_slice(s, after_once, toks, r + 2, end_j, start, ctx_after_once, gid_at_open, max_gid);
                     if (cont1.ok) return cont1;
                 }
                 // …or skip it.
-                return match_slice(s, i, toks, r + 2, end_j, start, ctx);
+                return match_slice(s, i, toks, r + 2, end_j, start, ctx, gid_at_open, max_gid);
             }
             else {
                 // No quantifier: match exactly once and continue within this slice.
@@ -344,27 +361,33 @@ static SliceResult match_slice (const std::string& s, size_t i, const std::vecto
             }
         }
         // regular atom
-        if (i >= s.size() || !match_atom(tok, s[i])) return {false,i};
+        if (i >= s.size() || !match_atom(tok, s[i])) return {false, i, ctx};
         ++i; ++j;
     }
-    return {true, i};
+    return {true, i, ctx};
 }
 
 static bool match_from(const std::string& s,
                        size_t i,
                        const std::vector<Token>& toks,
                        size_t j,
-                       size_t start){
-    auto sub = match_slice(s, i, toks, 0, toks.size(), start, MatchCtx{});
+                       size_t start,
+                       std::vector<int> gid_at_open,
+                        int max_gid){
+    MatchCtx ctx; ctx.groups.resize(max_gid + 1);            
+    auto sub = match_slice(s, i, toks, 0, toks.size(), start, ctx, gid_at_open, max_gid);
     return sub.ok;
 }
 bool match_pattern(const std::string& input_line, const std::string& pattern) {
     // Tokenize once
     auto toks = tokenize(pattern);
+    int max_gid = 0;
+    auto gid_at_open = number_groups(toks, max_gid);
+    DBG_PRINT("Max_gid: " << max_gid);
     if(toks.empty()) return true; //empty pattern matches trivalliy
 
     for (std::size_t pos = 0; pos < input_line.size(); pos++){
-        if(match_from(input_line, pos, toks, 0, pos)){
+        if(match_from(input_line, pos, toks, 0, pos, gid_at_open, max_gid)){
             return true;
         }
     }

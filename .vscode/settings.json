@@ -39,5 +39,6 @@
         "stack": "cpp",
         "__split_buffer": "cpp",
         "vector": "cpp"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
